@@ -70,19 +70,22 @@ else ()
         include (golang)
     endif ()
 
+    include (snappy)
 
-    set (CGO_FLAGS   CGO_CFLAGS="-I${BUILDEM_INCLUDE_DIR}";CGO_LDFLAGS="-L${BUILDEM_LIB_DIR};-lsnappy")
+
+    set (CGO_FLAGS
+    CGO_CFLAGS="-I${BUILDEM_INCLUDE_DIR};-I$ENV{SGE_ROOT}/include";CGO_LDFLAGS="-L${BUILDEM_LIB_DIR};-L$ENV{SGE_ROOT}/lib/lx-amd64;-lsnappy;-ldrmaa")
 
     add_custom_target (go-drmaa-install
-        ${BUILDEM_ENV_STRING} ${CGO_FLAGS} go get ${GO_GET} github.com/janelia-flyem/dgruber/drmaa
+        ${BUILDEM_ENV_STRING} ${CGO_FLAGS} go get ${GO_GET} github.com/janelia-flyem/drmaa
         DEPENDS     ${golang_NAME}
         COMMENT     "Retrieved Go DRMAA job submission library")
 
     add_custom_target (go-drmaa
         git submodule init
-        COMMAND     ./build
+        COMMAND     ./build.sh
         DEPENDS     go-drmaa-install
-        WORKING_DIRECTORY $ENV{GOPATH}/src/github.com/dgruber/drmaa
+        WORKING_DIRECTORY $ENV{GOPATH}/src/github.com/janelia-flyem/drmaa
         COMMENT     "Built Go DRMAA job submission library")
     
     add_custom_target (dvid
@@ -92,7 +95,7 @@ else ()
 
     add_custom_target (gopackages-install
         ${BUILDEM_ENV_STRING} ${CGO_FLAGS} go get ${GO_GET} github.com/janelia-flyem/go
-        DEPENDS     ${golang_NAME}
+        DEPENDS     ${golang_NAME} ${snappy_NAME}
         COMMENT     "Added go package dependencies for janelia-flyem projects")
 
     add_custom_target (gopackages
@@ -101,29 +104,38 @@ else ()
         DEPENDS     gopackages-install
         WORKING_DIRECTORY $ENV{GOPATH}/src/github.com/janelia-flyem/go
         COMMENT     "Updated required Go packages")
+
+    add_custom_target (groupcache
+        ${BUILDEM_ENV_STRING} ${CGO_FLAGS} go get ${GO_GET} github.com/golang/groupcache
+        DEPENDS     ${golang_NAME}
+        COMMENT     "Added groupcache dependency")
+
+    # Make manager + node
+    add_custom_target (all
+        echo "Building manager and node executable"
+        DEPENDS     manager node)
     
     # Build manager
     add_custom_target (manager
         ${BUILDEM_ENV_STRING} ${GO_ENV} ${CGO_FLAGS} go build -o ${BUILDEM_BIN_DIR}/dvid-manager 
-            -v manager.go 
-        WORKING_DIRECTORY   ${CMAKE_CURRENT_SOURCE_DIR}/manager
+            -v main.go 
+        WORKING_DIRECTORY   ${CMAKE_CURRENT_SOURCE_DIR}/manager-exe
         DEPENDS     ${golang_NAME} go-drmaa gopackages 
         COMMENT     "Compiled and installed DVID cluster manager.")
 
     # Build node program
     add_custom_target (node
         ${BUILDEM_ENV_STRING} ${GO_ENV} ${CGO_FLAGS} go build -o ${BUILDEM_BIN_DIR}/dvid-node 
-            -v node.go 
-        WORKING_DIRECTORY   ${CMAKE_CURRENT_SOURCE_DIR}/node
-        DEPENDS     ${golang_NAME} gopackages 
+            -v main.go 
+        WORKING_DIRECTORY   ${CMAKE_CURRENT_SOURCE_DIR}/node-exe
+        DEPENDS     ${golang_NAME} gopackages groupcache
         COMMENT     "Compiled and installed DVID node program.")
 
 
    # Add testing
    add_custom_target (test
-        ${BUILDEM_ENV_STRING} ${CGO_FLAGS} go test ${CMAKE_CURRENT_SOURCE_DIR}/manager
-            ${CMAKE_CURRENT_SOURCE_DIR}/node
-        COMMENT    "Ran tests on DVID cluster manager and node")
+        ${BUILDEM_ENV_STRING} ${CGO_FLAGS} go test ${CMAKE_CURRENT_SOURCE_DIR}/node
+        COMMENT    "Ran tests on DVID and node")
 
 
     ###############################################################################
